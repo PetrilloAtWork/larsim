@@ -2,6 +2,7 @@
 #include "art_root_io/TFileService.h"
 
 #include "larsim/PhotonPropagation/PhotonLibrary.h"
+#include "larcorealg/CoreUtils/counter.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
 #include "RtypesCore.h"
@@ -99,6 +100,27 @@ namespace phot{
 
 
   //------------------------------------------------------------
+  void PhotonLibrary::StoreLibraryToPlainDataFile(std::string const& fileName) const {
+  
+    // cheater! it's only the VUV visibility!
+    mf::LogInfo("PhotonLibrary")
+      << "Saving the full library information as plain data files.";
+    
+    std::ofstream outFile(fileName, std::ios::binary | std::ios::trunc);
+    outFile.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+ 
+    for (auto const iEntry: util::counter(fLookupTable.size())) {
+      float const vis = fLookupTable[iEntry];
+      outFile.write(reinterpret_cast<char const*>(&vis), sizeof(vis));
+    }
+    
+    mf::LogVerbatim("PhotonLibrary")
+      << "Full VUV library information saved as as '" << fileName << "'.";
+    
+  } // PhotonLibrary::StoreLibraryToPlainDataFile()
+  
+  
+  //------------------------------------------------------------
 
   void PhotonLibrary::CreateEmptyLibrary(
     size_t NVoxels, size_t NOpChannels,
@@ -193,7 +215,7 @@ namespace phot{
     // of the vector (by design, that was only relevant in `CreateEmptyLibrary()`)
     fLookupTable.resize(LibrarySize());
     fLookupTable.data_init(LibrarySize());
-
+    
     if(fHasTiming!=0)
     {
       timing_par.resize(getTiming);

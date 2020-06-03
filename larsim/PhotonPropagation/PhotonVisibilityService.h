@@ -147,6 +147,7 @@ namespace phot{
     bool                 fUseNhitsModel;
     bool 		 fApplyVISBorderCorrection;
     std::string          fVISBorderCorrectionType;		
+    std::string          fSaveAsBinaryFile;
 
     bool                 fParPropTime;
     size_t               fParPropTime_npar;

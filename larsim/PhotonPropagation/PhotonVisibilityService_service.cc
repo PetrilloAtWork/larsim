@@ -172,10 +172,15 @@ namespace phot{
           }
           else{
             PhotonLibrary* lib = new PhotonLibrary;
+            
             fTheLibrary = lib;
 
             size_t NVoxels = GetVoxelDef().GetNVoxels();
             lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
+            
+            if (!fSaveAsBinaryFile.empty())
+              lib->StoreLibraryToPlainDataFile(fSaveAsBinaryFile);
+            
           }
         }
       }
@@ -191,7 +196,7 @@ namespace phot{
 
         lib->CreateEmptyLibrary(NVoxels, NOpDets, fStoreReflected, fStoreReflT0, fParPropTime_npar);
       }
-
+      
     }
   }
 
@@ -234,7 +239,8 @@ namespace phot{
     fUseNhitsModel        = p.get< bool        >("UseNhitsModel", false);
     fApplyVISBorderCorrection = p.get< bool    >("ApplyVISBorderCorrection", false);
     fVISBorderCorrectionType = p.get< std::string >("VIS_BORDER_correction_type","");
-
+    fSaveAsBinaryFile     = p.get< std::string >("SaveAsBinaryFile", "");
+    
     // Voxel parameters
     fUseCryoBoundary      = p.get< bool        >("UseCryoBoundary", false);
     fInterpolate          = p.get< bool        >("Interpolate", false);
