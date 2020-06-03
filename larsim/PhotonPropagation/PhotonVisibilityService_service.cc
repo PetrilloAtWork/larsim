@@ -385,7 +385,7 @@ namespace phot{
       auto const VoxID = VoxelAt(p);
       data = GetLibraryEntries(VoxID, wantReflected);
     }
-    return fMapping->applyOpDetMapping(p, data);
+    return fMapping->applyOpDetMapping(p, std::move(data));
   }
 
 
@@ -529,8 +529,7 @@ namespace phot{
   {
     // both the input and the output go through mapping to apply needed symmetries.
     int const VoxID = VoxelAt(p);
-    phot::IPhotonLibrary::Counts_t const& data = GetLibraryReflT0Entries(VoxID);
-    return fMapping->applyOpDetMapping(p, data);
+    return fMapping->applyOpDetMapping(p, GetLibraryReflT0Entries(VoxID));
   }
 
   //------------------------------------------------------
@@ -574,15 +573,13 @@ namespace phot{
   auto PhotonVisibilityService::doGetTimingPar(geo::Point_t const& p) const -> MappedParams_t
   {
     int const VoxID = VoxelAt(p);
-    phot::IPhotonLibrary::Params_t const& params = GetLibraryTimingParEntries(VoxID);
-    return fMapping->applyOpDetMapping(p, params);
+    return fMapping->applyOpDetMapping(p, GetLibraryTimingParEntries(VoxID));
   }
 
   auto PhotonVisibilityService::doGetTimingTF1(geo::Point_t const& p) const -> MappedFunctions_t
   {
     int const VoxID = VoxelAt(p);
-    phot::IPhotonLibrary::Functions_t const& functions = GetLibraryTimingTF1Entries(VoxID);
-    return fMapping->applyOpDetMapping(p, functions);
+    return fMapping->applyOpDetMapping(p, GetLibraryTimingTF1Entries(VoxID));
   }
 
 
