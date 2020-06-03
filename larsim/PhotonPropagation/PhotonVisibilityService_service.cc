@@ -33,12 +33,15 @@
 
 // framework libraries
 #include "art/Utilities/make_tool.h"
+#include "cetlib_except/exception.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
 
 // ROOT libraries
 #include "TF1.h"
 
 // C/C++ standard libraries
+#include <optional>
+
 
 namespace phot{
 
@@ -145,60 +148,64 @@ namespace phot{
   {
     // Don't do anything if the library has already been loaded.
 
-    if(fTheLibrary == 0) {
+    if (fTheLibrary) return;
 
-      if((!fLibraryBuildJob)&&(!fDoNotLoadLibrary)) {
-        std::string LibraryFileWithPath;
-        cet::search_path sp("FW_SEARCH_PATH");
+    if((!fLibraryBuildJob)&&(!fDoNotLoadLibrary)) {
+      std::string LibraryFileWithPath;
+      cet::search_path sp("FW_SEARCH_PATH");
 
-        if( !sp.find_file(fLibraryFile, LibraryFileWithPath) )
-          throw cet::exception("PhotonVisibilityService") << "Unable to find photon library in "  << sp.to_string() << "\n";
+      if( !sp.find_file(fLibraryFile, LibraryFileWithPath) )
+        throw cet::exception("PhotonVisibilityService") << "Unable to find photon library in "  << sp.to_string() << "\n";
 
-        if(!fParameterization) {
-          art::ServiceHandle<geo::Geometry const> geom;
-
-          mf::LogInfo("PhotonVisibilityService") << "PhotonVisibilityService Loading photon library from file "
-                                                 << LibraryFileWithPath
-                                                 << " for "
-                                                 << GetVoxelDef().GetNVoxels()
-                                                 << " voxels and "
-                                                 << geom->NOpDets()
-                                                 << " optical detectors."
-                                                 << std::endl;
-
-          if(fHybrid){
-            fTheLibrary = new PhotonLibraryHybrid(LibraryFileWithPath,
-                                                  GetVoxelDef());
-          }
-          else{
-            PhotonLibrary* lib = new PhotonLibrary;
-            
-            fTheLibrary = lib;
-
-            size_t NVoxels = GetVoxelDef().GetNVoxels();
-            lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
-            
-            if (!fSaveAsBinaryFile.empty())
-              lib->StoreLibraryToPlainDataFile(fSaveAsBinaryFile);
-            
-          }
-        }
+      if(fParameterization) {
+        PhotonLibraryOnlyParametersCheck();
       }
       else {
         art::ServiceHandle<geo::Geometry const> geom;
 
-        size_t NOpDets = geom->NOpDets();
-        size_t NVoxels = GetVoxelDef().GetNVoxels();
-        mf::LogInfo("PhotonVisibilityService") << " Vis service running library build job.  Please ensure "
-                                               << " job contains LightSource, LArG4, SimPhotonCounter"<<std::endl;
-        PhotonLibrary* lib = new PhotonLibrary;
-        fTheLibrary = lib;
+        mf::LogInfo("PhotonVisibilityService") << "PhotonVisibilityService Loading photon library from file "
+                                                << LibraryFileWithPath
+                                                << " for "
+                                                << GetVoxelDef().GetNVoxels()
+                                                << " voxels and "
+                                                << geom->NOpDets()
+                                                << " optical detectors."
+                                                << std::endl;
 
-        lib->CreateEmptyLibrary(NVoxels, NOpDets, fStoreReflected, fStoreReflT0, fParPropTime_npar);
+        if(fHybrid){
+          PhotonLibraryOnlyParametersCheck();
+          fTheLibrary = new PhotonLibraryHybrid(LibraryFileWithPath,
+                                                GetVoxelDef());
+        }
+        else{
+          PhotonLibrary* lib = new PhotonLibrary;
+          
+          fTheLibrary = lib;
+
+          size_t NVoxels = GetVoxelDef().GetNVoxels();
+          lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
+          
+          if (!fSaveAsBinaryFile.empty())
+            lib->StoreLibraryToPlainDataFile(fSaveAsBinaryFile);
+          
+        }
       }
-      
     }
-  }
+    else {
+      PhotonLibraryOnlyParametersCheck();
+      art::ServiceHandle<geo::Geometry const> geom;
+
+      size_t NOpDets = geom->NOpDets();
+      size_t NVoxels = GetVoxelDef().GetNVoxels();
+      mf::LogInfo("PhotonVisibilityService") << " Vis service running library build job.  Please ensure "
+                                              << " job contains LightSource, LArG4, SimPhotonCounter"<<std::endl;
+      PhotonLibrary* lib = new PhotonLibrary;
+      fTheLibrary = lib;
+
+      lib->CreateEmptyLibrary(NVoxels, NOpDets, fStoreReflected, fStoreReflT0, fParPropTime_npar);
+    }
+
+  } // PhotonVisibilityService::LoadLibrary()
 
   //--------------------------------------------------------------------
   void PhotonVisibilityService::StoreLibrary()
@@ -352,6 +359,25 @@ namespace phot{
 
   }
 
+
+  //------------------------------------------------------
+  void PhotonVisibilityService::PhotonLibraryOnlyParametersCheck() const {
+    
+    std::optional<cet::exception> e;
+    auto errMsg =
+      [&e](){ if (!e) e.emplace("PhotonVisibilityService"); return e.value(); };
+    if (!fSaveAsBinaryFile.empty()) {
+      errMsg() << "Option 'SaveAsBinaryFile' (set to '" << fSaveAsBinaryFile
+        << "' is valid only when *reading* a *standard* photon library"
+        << " (e.g. not an hybrid one).";
+    }
+    if (!fLoadFromBinaryFile.empty()) {
+      errMsg() << "Option 'LoadFromBinaryFile' (set to '" << fLoadFromBinaryFile
+        << "' is valid only when *reading* a *standard* photon library"
+        << " (e.g. not an hybrid one).";
+    }
+    if (e) throw std::move(e.value());
+  } // PhotonVisibilityService::PhotonLibraryOnlyParametersCheck()
 
 
   //------------------------------------------------------

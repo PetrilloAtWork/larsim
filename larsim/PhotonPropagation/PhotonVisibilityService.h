@@ -247,6 +247,11 @@ namespace phot{
     // --- END Implementation functions ----------------------------------------
 
 
+    /// Checks that options specific to `PhotonLibrary` are not specified.
+    /// @throw cet::exception (category `"PhotonLibraryService"`)
+    void PhotonLibraryOnlyParametersCheck() const;
+
+
   }; // class PhotonVisibilityService
 } //namespace phot
 DECLARE_ART_SERVICE(phot::PhotonVisibilityService, LEGACY)
