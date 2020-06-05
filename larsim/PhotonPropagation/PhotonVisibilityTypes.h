@@ -19,7 +19,8 @@
 // LArSoft libraries
 #include "larsim/PhotonPropagation/IPhotonLibrary.h"
 #include "larsim/PhotonPropagation/LibraryMappingTools/IPhotonMappingTransformations.h"
-
+#include "larsim/PhotonPropagation/CarefreePointerTraitsForOpDetVisibilityData.h"
+#include "lardataalg/Utilities/CarefreePointerTraits.h" // see header doc
 
 namespace phot{
 
@@ -83,6 +84,9 @@ namespace phot{
     ;
 
 } // namespace phot
+
+
+//------------------------------------------------------------------------------
 
 
 #endif // LARSIM_PHOTONPROPAGATION_PHOTONVISIBILITYTYPES_H

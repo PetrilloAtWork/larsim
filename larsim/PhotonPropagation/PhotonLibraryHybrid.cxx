@@ -83,15 +83,22 @@ namespace phot
   }
 
   //--------------------------------------------------------------------
-  const float* PhotonLibraryHybrid::GetCounts(size_t vox) const
+  auto PhotonLibraryHybrid::GetCounts(size_t vox) const -> Counts_t
   {
     // The concept of GetCounts() conflicts fairly badly with how this library
     // works. This is probably the best we can do.
+    // Update: with the Counts_t indirection, it is possible to allocate memory
+    //         each time:
+    /* // untested!
+    Counts_t counts { std::make_unique<float[]>(NOpChannels()) };
+    for (auto od: util::counter(NOpChannels())) counts[od] = GetCount(vox, od);
+    return counts;
+    */
 
     static float* counts = 0;
     if(!counts) counts = new float[NOpChannels()];
     for(int od = 0; od < NOpChannels(); ++od) counts[od] = GetCount(vox, od);
-    return counts;
+    return { counts };
   }
 
   //--------------------------------------------------------------------

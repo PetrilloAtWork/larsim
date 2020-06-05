@@ -205,6 +205,62 @@ namespace phot {
       {}
 
 
+    /**
+     * @brief Constructor: steals data, acquires mapping and a default value.
+     * @param cont container with the data to be mapped
+     * @param mapping the mapping to be used
+     * @param size the size of the container after mapping
+     * @param defValue value to be used as default
+     * @see `MappedContainer(DataContainer_t&&, Mapping_t const&, size_type, value_type)`
+     *
+     * This works as the equivalent `util::MappedContainer` constructor, except
+     * that if the data in `cont` is deemed invalid the size is overridden to
+     * zero.
+     */
+    OpDetVisibilityData(
+      DataContainer_t&& cont,
+      Mapping_t const& mapping,
+      size_type size,
+      value_type defValue
+      )
+      : ContainerBase_t
+        (std::move(cont), mapping, effectiveSize(cont, size), defValue)
+      {}
+
+    /**
+     * @brief Constructor: steals data and acquires mapping.
+     * @param cont container with the data to be mapped
+     * @param mapping the mapping to be used
+     * @param size the size of the container after mapping
+     * @see `MappedContainer(DataContainer_t&&, Mapping_t const&, size_type)`
+     *
+     * This works as the equivalent `util::MappedContainer` constructor, except
+     * that if the data in `cont` is deemed invalid the size is overridden to
+     * zero.
+     */
+    OpDetVisibilityData
+      (DataContainer_t&& cont, Mapping_t const& mapping, size_type size)
+      : ContainerBase_t(std::move(cont), mapping, effectiveSize(cont, size))
+      {}
+
+    /**
+     * @brief Constructor: steals data and acquires mapping.
+     * @param cont container with the data to be mapped
+     * @param mapping the mapping to be used
+     * @see `util::MappedContainer(DataContainer_t&&, Mapping_t const&, size_type)`
+     *
+     * The size of the container is declared to be the minimal one
+     * (see `minimal_size()`), unless data of the library `cont` is invalid,
+     * in which case the full container is invalid.
+     *
+     * The default value is assigned as in
+     * `util::MappedContainer(DataContainer_t&&, Mapping_t const&, size_type)`.
+     */
+    OpDetVisibilityData(DataContainer_t&& cont, Mapping_t const& mapping)
+      : ContainerBase_t(std::move(cont), mapping, effectiveSize(cont, mapping))
+      {}
+
+
     // --- END Constructors ----------------------------------------------------
 
 
@@ -388,7 +444,7 @@ namespace phot {
   template <typename Cont>
   bool isValidLibraryData(Cont&& cont) {
     return
-      LibraryDataValidatorStruct<std::remove_reference_t<Cont>>::isValid(cont);
+      LibraryDataValidatorStruct<std::decay_t<Cont>>::isValid(cont);
   } // isValidLibraryData()
 
 

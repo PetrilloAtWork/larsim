@@ -25,16 +25,16 @@ namespace phot
     virtual float GetCount(size_t Voxel, size_t OpChannel) const override;
 
     // This one is unimplemented
-    virtual const float* GetCounts(size_t Voxel) const override;
+    virtual Counts_t GetCounts(size_t Voxel) const override;
 
     /// Don't implement reflected light
     virtual bool hasReflected() const override {return false;}
-    virtual const float* GetReflCounts(size_t Voxel) const override {return 0;}
+    virtual Counts_t GetReflCounts(size_t Voxel) const override {return { nullptr };}
     virtual float GetReflCount(size_t Voxel, size_t OpChannel) const override {return 0;}
 
     /// Don't implement reflected light timing
     virtual bool hasReflectedT0() const override {return false;}
-    virtual const float* GetReflT0s(size_t Voxel) const override {return 0;}
+    virtual T0s_t GetReflT0s(size_t Voxel) const override {return 0;}
     virtual float GetReflT0(size_t Voxel, size_t OpChannel) const override {return 0;}
 
     virtual int NOpChannels() const override {return fRecords.size();}

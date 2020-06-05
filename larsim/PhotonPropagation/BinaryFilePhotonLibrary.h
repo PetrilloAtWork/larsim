@@ -1,29 +1,38 @@
-////# PhotonLibrary.h header file
-////#
-////# Ben Jones, MIT, 2012
-#ifndef PHOTONLIBRARY_H
-#define PHOTONLIBRARY_H
+/**
+ * @file   larsim/PhotonPropagation/BinaryFilePhotonLibrary.h
+ * @brief  Photon library whose data is read from a "flat" data file.
+ * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
+ * @date   June 4, 2020
+ * @see    larsim/PhotonPropagation/BinaryFilePhotonLibrary.cxx
+ * 
+ * This is a copy of `phot::PhotonLibrary` object, where the visibility map for
+ * direct light is stored in a plain binary file instead of the ROOT tree.
+ * 
+ */
+
+#ifndef LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H
+#define LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H
 
 #include "larsim/PhotonPropagation/IPhotonLibrary.h"
 
 #include "TF1.h"
-class TTree;
 
 #include "larsim/PhotonPropagation/VoxelizedChannelData.h"
 #include "lardataobj/Utilities/LazyVector.h"
 
+class TTree;
+
 namespace phot{
 
-  class PhotonLibrary : public IPhotonLibrary
+  class BinaryFilePhotonLibrary : public IPhotonLibrary
   {
   public:
-    PhotonLibrary() = default;
+    BinaryFilePhotonLibrary() = default;
 
     TTree * ProduceTTree() const;
 
 
     virtual float GetCount(size_t Voxel, size_t OpChannel) const override;
-    void SetCount(size_t Voxel, size_t OpChannel, float Count);
 
     float GetTimingPar(size_t Voxel, size_t OpChannel, size_t parnum) const;
     void SetTimingPar(size_t Voxel, size_t OpChannel, float Count, size_t parnum);
@@ -55,14 +64,11 @@ namespace phot{
     /// Returns whether the current library deals with reflected light timing.
     virtual bool hasReflectedT0() const override { return fHasReflectedT0; }
 
-
-    void StoreLibraryToFile(std::string LibraryFile, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0) const;
-    void StoreLibraryToPlainDataFile(std::string const& fileName) const;
-    void LoadLibraryFromFile(std::string LibraryFile, size_t NVoxels, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0, int maxrange=200);
-    void LoadLibraryFromPlainDataFile
-      (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels);
-    void CreateEmptyLibrary(size_t NVoxels, size_t NChannels, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0);
-
+    void LoadLibraryFromFile(
+      std::string const& LibraryFile,
+      std::string const& DirectVisibilityPlainFilePath,
+      unsigned int Voxels, unsigned int nOpChannels,
+      bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0, int maxrange=200);
 
     virtual int NOpChannels() const override { return fNOpChannels; }
     virtual int NVoxels() const override { return fNVoxels; }
@@ -71,6 +77,9 @@ namespace phot{
 
 
   private:
+    
+    /// Type of resource handler for the direct light visibility table.
+    using LookupTableFile_t = phot::VoxelizedChannelData<float> ;
 
     bool fHasReflected   = false; ///< Whether the current library deals with reflected light counts.
     bool fHasReflectedT0 = false; ///< Whether the current library deals with reflected light timing.
@@ -78,9 +87,10 @@ namespace phot{
     size_t fHasTiming = 0; ///< Whether the current library deals with time propagation distribution.
 
 
-    // fLookupTable[unchecked_index(Voxel, OpChannel)] = Count
+    LookupTableFile_t fLookupTableFile;
+    
+    // fXxxLookupTable[unchecked_index(Voxel, OpChannel)] = Count
     // for each voxel, all NChannels() channels are stored in sequence
-    util::LazyVector<float> fLookupTable;
     util::LazyVector<float> fReflLookupTable;
     util::LazyVector<float> fReflTLookupTable;
     util::LazyVector<std::vector<float>> fTimingParLookupTable;
@@ -88,7 +98,6 @@ namespace phot{
     std::string fTimingParFormula;
     size_t fTimingParNParameters;
     
-    std::optional<phot::VoxelizedChannelData<float>> fLookupTableFile;
 
     size_t fNOpChannels;
     size_t fNVoxels;
@@ -98,14 +107,6 @@ namespace phot{
     /// Returns the index of visibility of specified voxel and cell
     size_t uncheckedIndex(size_t Voxel, size_t OpChannel) const
       { return Voxel * fNOpChannels + OpChannel; }
-
-    /// Unchecked access to a visibility datum
-    float uncheckedAccess (size_t Voxel, size_t OpChannel) const
-      { return fLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
-
-    /// Unchecked access to a visibility datum
-    float& uncheckedAccess(size_t Voxel, size_t OpChannel)
-      { return fLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
 
     /// Unchecked access to a reflected visibility datum
     float uncheckedAccessRefl (size_t Voxel, size_t OpChannel) const
@@ -143,6 +144,12 @@ namespace phot{
       // note that this will produce a segmentation fault if the formula is not there
       return *(fTimingParTF1LookupTable.data_address(uncheckedIndex(Voxel, OpChannel)));
     }
+    
+    void LoadLibraryFromPlainDataFile
+      (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels);
+    
+    /// Returns the total number of entries in the direct light lookup table.
+    std::size_t LookupTableSize() const;
 
     /// Name of the optical channel number in the input tree
     static std::string const OpChannelBranchName;
@@ -151,10 +158,10 @@ namespace phot{
     static size_t ExtractNOpChannels(TTree* tree);
 
     /// Converts size_t into integer
-    static int size_t2int(size_t val) {
-    return (val <= INT_MAX) ? (int)((ssize_t)val) : -1; }
+    static int size_t2int(size_t val)
+      { return (val <= std::numeric_limits<int>::max())? (int)((ssize_t)val) : -1; }
   };
 
 }
 
-#endif
+#endif // LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H

@@ -25,9 +25,11 @@
 // LArSoft includes
 #include "larsim/PhotonPropagation/PhotonVisibilityService.h"
 #include "larsim/PhotonPropagation/PhotonLibrary.h"
+#include "larsim/PhotonPropagation/BinaryFilePhotonLibrary.h"
 #include "larsim/Simulation/PhotonVoxels.h"
 #include "larcore/Geometry/Geometry.h"
 #include "larcorealg/Geometry/OpDetGeo.h"
+#include "larcorealg/CoreUtils/counter.h"
 
 #include "larsim/PhotonPropagation/PhotonLibraryHybrid.h"
 
@@ -41,6 +43,7 @@
 
 // C/C++ standard libraries
 #include <optional>
+#include <filesystem>
 
 
 namespace phot{
@@ -114,6 +117,9 @@ namespace phot{
     fTheLibrary(nullptr),
     fVoxelDef()
   {
+    mf::LogInfo("PhotonVisibilityService")
+      << "PhotonVisbilityService initializing";
+    
     this->reconfigure(pset);
 
     if (pset.has_key("ReflectOverZeroX")) { // legacy parameter warning
@@ -140,7 +146,6 @@ namespace phot{
     fMapping = art::make_tool<phot::IPhotonMappingTransformations>
       (pset.get<fhicl::ParameterSet>("Mapping", mapDefaultSet));
 
-    mf::LogInfo("PhotonVisibilityService")<<"PhotonVisbilityService initializing"<<std::endl;
   }
 
   //--------------------------------------------------------------------
@@ -177,16 +182,39 @@ namespace phot{
           fTheLibrary = new PhotonLibraryHybrid(LibraryFileWithPath,
                                                 GetVoxelDef());
         }
-        else{
-          PhotonLibrary* lib = new PhotonLibrary;
+        else {
           
-          fTheLibrary = lib;
+          std::size_t const NVoxels = GetVoxelDef().GetNVoxels();
+          
+          if (fLookupTableFile.empty()) {
+            PhotonLibrary* lib = new PhotonLibrary;
+            
+            fTheLibrary = lib;
 
-          size_t NVoxels = GetVoxelDef().GetNVoxels();
-          lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
-          
-          if (!fSaveAsBinaryFile.empty())
-            lib->StoreLibraryToPlainDataFile(fSaveAsBinaryFile);
+            lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
+            
+            if (!fSaveLookupTableFile.empty())
+              lib->StoreLibraryToPlainDataFile(fSaveLookupTableFile);
+          }
+          else {
+            auto* lib = new phot::BinaryFilePhotonLibrary;
+            fTheLibrary = lib;
+            
+            std::string LookupTableFileWithPath;
+            if (!sp.find_file(fLookupTableFile, LookupTableFileWithPath)) {
+              throw cet::exception("PhotonVisibilityService")
+                << "Unable to find direct photon visibility file '"
+                << fLookupTableFile << "' in " << sp.to_string() << "\n";
+            }
+            
+            lib->LoadLibraryFromFile(
+              LibraryFileWithPath,
+              LookupTableFileWithPath,
+              NVoxels, fMapping->libraryMappingSize(geo::origin()), // TODO the library should contain its size
+              fStoreReflected, fStoreReflT0,
+              fParPropTime_npar, fParPropTime_MaxRange
+              );
+          }
           
         }
       }
@@ -246,7 +274,8 @@ namespace phot{
     fUseNhitsModel        = p.get< bool        >("UseNhitsModel", false);
     fApplyVISBorderCorrection = p.get< bool    >("ApplyVISBorderCorrection", false);
     fVISBorderCorrectionType = p.get< std::string >("VIS_BORDER_correction_type","");
-    fSaveAsBinaryFile     = p.get< std::string >("SaveAsBinaryFile", "");
+    fSaveLookupTableFile  = p.get< std::string >("SaveVisibilityAsBinaryFile", "");
+    fLookupTableFile      = p.get< std::string >("VisibilityBinaryFilePath", "");
     
     // Voxel parameters
     fUseCryoBoundary      = p.get< bool        >("UseCryoBoundary", false);
@@ -366,13 +395,15 @@ namespace phot{
     std::optional<cet::exception> e;
     auto errMsg =
       [&e](){ if (!e) e.emplace("PhotonVisibilityService"); return e.value(); };
-    if (!fSaveAsBinaryFile.empty()) {
-      errMsg() << "Option 'SaveAsBinaryFile' (set to '" << fSaveAsBinaryFile
+    if (!fSaveLookupTableFile.empty()) {
+      errMsg() << "Option 'SaveVisibilityAsBinaryFile' (set to '"
+        << fSaveLookupTableFile
         << "' is valid only when *reading* a *standard* photon library"
         << " (e.g. not an hybrid one).";
     }
-    if (!fLoadFromBinaryFile.empty()) {
-      errMsg() << "Option 'LoadFromBinaryFile' (set to '" << fLoadFromBinaryFile
+    if (!fLookupTableFile.empty()) {
+      errMsg() << "Option 'VisibilityBinaryFilePath' (set to '"
+        << fLookupTableFile
         << "' is valid only when *reading* a *standard* photon library"
         << " (e.g. not an hybrid one).";
     }
@@ -398,25 +429,24 @@ namespace phot{
 
   auto PhotonVisibilityService::doGetAllVisibilities(geo::Point_t const& p, bool wantReflected) const -> MappedCounts_t
   {
-    phot::IPhotonLibrary::Counts_t data{};
+    phot::IPhotonLibrary::Counts_t data;
 
     // first we fill a container of visibilities in the library index space
     // (it is directly the values of the library unless interpolation is
     //  requested)
     if(fInterpolate){
-      // this is a punch into multithreading face:
-      static std::vector<float> ret;
-      ret.resize(fMapping->libraryMappingSize(p));
-      for(std::size_t libIndex = 0; libIndex < ret.size(); ++libIndex) {
-        ret[libIndex]
+      std::size_t const size = fMapping->libraryMappingSize(p);
+      auto vis = std::make_unique<float[]>(size);
+      for(auto libIndex: util::counter(size)) {
+        vis[libIndex]
           = doGetVisibilityOfOpLib(p, LibraryIndex_t(libIndex), wantReflected);
       }
-      data = &ret.front();
+      data = phot::IPhotonLibrary::Counts_t{ std::move(vis) };
     }
     else{
-      auto const VoxID = VoxelAt(p);
-      data = GetLibraryEntries(VoxID, wantReflected);
+      data = GetLibraryEntries(VoxelAt(p), wantReflected);
     }
+    
     return fMapping->applyOpDetMapping(p, std::move(data));
   }
 
@@ -566,7 +596,7 @@ namespace phot{
 
   //------------------------------------------------------
 
-  phot::IPhotonLibrary::Counts_t PhotonVisibilityService::GetLibraryReflT0Entries(int VoxID) const
+  phot::IPhotonLibrary::T0s_t PhotonVisibilityService::GetLibraryReflT0Entries(int VoxID) const
   {
     if(fTheLibrary == 0)
       LoadLibrary();

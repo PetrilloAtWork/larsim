@@ -14,6 +14,8 @@
 #include "TNamed.h"
 #include "TString.h"
 
+#include <filesystem>
+
 namespace phot{
 
   std::string const PhotonLibrary::OpChannelBranchName = "OpChannel";
@@ -278,6 +280,16 @@ namespace phot{
 
   }
 
+  //------------------------------------------------------------
+  void PhotonLibrary::LoadLibraryFromPlainDataFile
+    (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels)
+  {
+    
+    fLookupTableFile.emplace(fileName, nVoxels, nOpChannels);
+    
+  } // PhotonLibrary::LoadLibraryFromPlainDataFile()
+  
+  
   //----------------------------------------------------
 
   float PhotonLibrary::GetCount(size_t Voxel, size_t OpChannel) const
@@ -363,10 +375,9 @@ namespace phot{
 
   //----------------------------------------------------
 
-  float const* PhotonLibrary::GetCounts(size_t Voxel) const
+  auto PhotonLibrary::GetCounts(size_t Voxel) const -> Counts_t
   {
-    if (Voxel >= fNVoxels) return nullptr;
-    else return fLookupTable.data_address(uncheckedIndex(Voxel, 0));
+    return { (Voxel < fNVoxels)? fLookupTable.data_address(uncheckedIndex(Voxel, 0)): nullptr };
   }
 
   //----------------------------------------------------
@@ -406,15 +417,15 @@ namespace phot{
 
   //----------------------------------------------------
 
-  float const* PhotonLibrary::GetReflCounts(size_t Voxel) const
+  auto PhotonLibrary::GetReflCounts(size_t Voxel) const -> Counts_t
   {
-    if (Voxel >= fNVoxels) return nullptr;
-    else return fReflLookupTable.data_address(uncheckedIndex(Voxel, 0));
+    if (Voxel >= fNVoxels) return { nullptr };
+    else return { fReflLookupTable.data_address(uncheckedIndex(Voxel, 0)) };
   }
 
   //----------------------------------------------------
 
-  float const* PhotonLibrary::GetReflT0s(size_t Voxel) const
+  auto PhotonLibrary::GetReflT0s(size_t Voxel) const -> T0s_t
   {
     if (Voxel >= fNVoxels) return nullptr;
     else return fReflTLookupTable.data_address(uncheckedIndex(Voxel, 0));

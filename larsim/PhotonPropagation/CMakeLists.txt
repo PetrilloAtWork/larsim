@@ -18,6 +18,7 @@ art_make(LIB_LIBRARIES larevt_Filters
                        ROOT::Matrix
                        ROOT::Tree
                        ROOT::GenVector
+                       "stdc++fs"
           SERVICE_LIBRARIES larsim_PhotonPropagation
                        larsim_Simulation
                        nug4_ParticleNavigation
@@ -30,6 +31,7 @@ art_make(LIB_LIBRARIES larevt_Filters
                        ${ART_ROOT_IO_TFILESERVICE_SERVICE}
                        ${MF_MESSAGELOGGER}
                        ROOT::GenVector
+                       "stdc++fs"
           MODULE_LIBRARIES larsim_PhotonPropagation
                         larsim_LegacyLArG4
                         larsim_ElectronDrift

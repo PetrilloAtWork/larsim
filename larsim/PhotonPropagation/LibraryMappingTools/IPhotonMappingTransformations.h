@@ -169,7 +169,8 @@ namespace phot {
     template <typename LibDataColl>
     using MappedOpDetData_t = phot::OpDetVisibilityData
       <
-        util::collection_reference_t<LibDataColl>,
+//         util::collection_reference_t<LibDataColl>, // reference
+        LibDataColl, // copy
         util::collection_reference_t<OpDetToLibraryIndexMap const>
       >;
 
@@ -439,7 +440,7 @@ auto phot::IPhotonMappingTransformations::applyOpDetMapping(
   auto const n = size(opDetToLibraryMap);
 
   return MappedOpDetData_t<Coll>{
-      util::make_collection_reference(std::forward<Coll>(source))
+      std::forward<Coll>(source)   // container is as specified in the parameter
     , std::cref(opDetToLibraryMap) // mapping is referenced
     , n                            // size
     , defaultValue

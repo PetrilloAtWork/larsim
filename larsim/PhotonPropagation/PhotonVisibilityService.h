@@ -62,10 +62,23 @@ namespace phot{
     float GetVisibility(Point const& p, unsigned int OpChannel, bool wantReflected=false ) const
       { return doGetVisibility(geo::vect::toPoint(p), OpChannel, wantReflected); }
 
+    /**
+     * @brief Fills `visibilities` from the given location to all channels.
+     * @tparam Point type of the point
+     * @param p location of the scintillation source, in world coordinates [cm]
+     * @param wantReflected _(default: `false`)_ whether to pick the reflected
+     *        light visibility map instead of the direct one which is default
+     * @return visibility fraction from point `p` to all channels
+     * 
+     * The `visibilities` object can be indexed to query a specific channel,
+     * or iterated through.
+     * It owns a copy of its data.
+     */
     template <typename Point>
     MappedCounts_t GetAllVisibilities
       (Point const& p, bool wantReflected=false ) const
       { return doGetAllVisibilities(geo::vect::toPoint(p), wantReflected); }
+
 
     void LoadLibrary() const;
     void StoreLibrary();
@@ -83,7 +96,7 @@ namespace phot{
     MappedT0s_t GetReflT0s(Point const& p) const
       { return doGetReflT0s(geo::vect::toPoint(p)); }
     void SetLibraryReflT0Entry( int VoxID, int OpChannel, float value );
-    phot::IPhotonLibrary::Counts_t GetLibraryReflT0Entries( int VoxID ) const;
+    phot::IPhotonLibrary::T0s_t GetLibraryReflT0Entries( int VoxID ) const;
     float GetLibraryReflT0Entry( int VoxID, OpDetID_t libOpChannel ) const;
 
     template <typename Point>
@@ -147,7 +160,8 @@ namespace phot{
     bool                 fUseNhitsModel;
     bool 		 fApplyVISBorderCorrection;
     std::string          fVISBorderCorrectionType;		
-    std::string          fSaveAsBinaryFile;
+    std::string          fSaveLookupTableFile;
+    std::string          fLookupTableFile;
 
     bool                 fParPropTime;
     size_t               fParPropTime_npar;

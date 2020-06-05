@@ -4,19 +4,28 @@
 #ifndef IPHOTONLIBRARY_H
 #define IPHOTONLIBRARY_H
 
+// LArSoft libraries
+#include "lardataalg/Utilities/CarefreePointer.h"
+
+// C/C++ standard libraries
 #include <vector>
 #include <cstddef> // size_t
+
 
 class TF1; // forward declaration
 
 namespace phot
 {
-  /// Interface shared by all PhotonLibrary-like classes
+  /// Interface shared by all PhotonLibrary-like classes.
   class IPhotonLibrary
   {
   public:
-    /// Type for visibility count per optical channel.
-    using Counts_t = const float*;
+    /**
+     * Type for visibility count per optical channel.
+     * 
+     * A `util::CarefreePointer` will take care of freeing its memory if needed.
+     */
+    using Counts_t = util::CarefreePointer<const float[]>;
 
     /// Type for time of arrival per optical channel.
     using T0s_t = const float*;
