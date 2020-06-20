@@ -3,19 +3,29 @@
  * @author Gianluca Petrillo (petrillo@slac.stanford.edu)
  * @date   July 1, 2020
  *
+ * This is a header-only library.
  */
 
 #ifndef LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_H
 #define LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_H
 
+#define LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_MULTITHREADING_ACCESS 1
+
+
+// LArSoft libraries
+#include "larsim/PhotonPropagation/PhotonLibraryBinaryFileFormat.h"
+
 // framework libraries
 #include "cetlib_except/exception.h"
 
 // C/C++ standard libraries
+#include <mutex>
 #include <filesystem>
 #include <memory> // std::unique_ptr<>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <cassert>
 
 
 // -----------------------------------------------------------------------------
@@ -45,8 +55,15 @@ class phot::VoxelizedChannelData {
   
   std::streamsize fVoxelDataSize; ///< Bytes of data per voxel.
   
+#ifdef LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_MULTITHREADING_ACCESS
+  std::unique_ptr<std::mutex> fDataMutex; ///< Control of file (`fData`) access.
+#endif
   mutable std::ifstream fData; ///< Data file.
   
+  std::istream::pos_type fDataOffset; ///< Where in data file the data starts.
+  
+  /// Candy: keep the full metadata information from the source file.
+  phot::PhotonLibraryBinaryFileFormat::HeaderSettings_t fMetadata;
   
   /// Returns the index in the file of the specified voxel data.
   std::size_t getIndex(unsigned int voxel) const;
@@ -61,14 +78,14 @@ class phot::VoxelizedChannelData {
     public:
   using Data_t = T; ///< Type of contained data.
   
+  /// Type of metadata record.
+  using Metadata_t = phot::PhotonLibraryBinaryFileFormat::HeaderSettings_t;
+  
   /// Sets this object in an undefined status. Assign it before using it!
   VoxelizedChannelData() = default;
   
   /// Initializes from the specified file and information.
-  VoxelizedChannelData(
-    std::string const& fileName,
-    unsigned int nVoxels, unsigned int nOpChannels
-    );
+  VoxelizedChannelData(std::filesystem::path const& fileName);
   
   /// Returns the number of stored voxels.
   unsigned int NVoxels() const { return static_cast<unsigned int>(fNVoxels); }
@@ -79,6 +96,9 @@ class phot::VoxelizedChannelData {
   
   /// Returns the total number of data entries.
   std::size_t NData() const { return NVoxels() * NChannels(); }
+  
+  /// Returns the metadata information.
+  Metadata_t const& metadata() const { return fMetadata; }
   
   /// Fills the buffer with data for the specified `voxel` from all channels.
   /// @return a pointer to the filled buffer (that is, `data`)
@@ -130,36 +150,47 @@ template <typename T>
 std::istream::pos_type phot::VoxelizedChannelData<T>::getPosition
   (std::size_t index) const
 {
-  return /* dataStartOffset + */ index * sizeof(Data_t);
+  return
+    fDataOffset + static_cast<std::istream::pos_type>(index * sizeof(Data_t));
 } // phot::VoxelizedChannelData<T>::getPosition(index)
 
 
 // -----------------------------------------------------------------------------
 template <typename T>
 phot::VoxelizedChannelData<T>::VoxelizedChannelData
-  (std::string const& fileName, unsigned int nVoxels, unsigned int nChannels)
-  : fNVoxels(nVoxels)
-  , fNChannels(nChannels)
-  , fVoxelDataSize(fNChannels * sizeof(Data_t))
-  , fData(fileName, std::ios::binary)
+  (std::filesystem::path const& fileName)
+  #ifdef LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_MULTITHREADING_ACCESS
+  : fDataMutex(std::make_unique<std::mutex>())
+  #endif
 {
   
-  std::uintmax_t const expectedSize = fNVoxels * fNChannels * sizeof(Data_t);
-  std::uintmax_t const fileSize = std::filesystem::file_size(fileName);
-  if (fileSize != expectedSize) {
-    throw cet::exception("VoxelizedChannelData")
-      << "Plain data file '" << fileName << "' should cover "
-      << fNVoxels << " voxels and " << fNChannels << " channels, and be "
-      << expectedSize << " bytes large, but it is " << fileSize
-      << " bytes instead.\n";
+  try {
+    
+    phot::PhotonLibraryBinaryFileFormat srcFile(fileName);
+    
+    fMetadata = srcFile.readHeader();
+    assert(srcFile.hasHeader());
+    
+    fDataOffset = srcFile.dataOffset();
+    
+  }
+  catch (cet::exception const& e) {
+    throw cet::exception("VoxelizedChannelData", "", e)
+      << "VoxelizedChannelData(): error while reading metadata from "
+      << fileName << "\n";
   }
   
-  fData.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+  fNVoxels = fMetadata.nVoxels;
+  fNChannels = fMetadata.nChannels;
+  fVoxelDataSize = fNChannels * sizeof(Data_t);
+  
+  fData.open(fileName, std::ios::binary);
+  fData.exceptions(~std::ifstream::goodbit);
   if (!fData.is_open()) {
     throw cet::exception("VoxelizedChannelData")
-      << "Failed to open data file '" << fileName << "'\n";
+      << "Failed to open visibility data file " << fileName << "\n";
   }
-  
+
 } // VoxelizedChannelData::VoxelizedChannelData()
 
 
@@ -214,6 +245,9 @@ auto phot::VoxelizedChannelData<T>::readData
   // error handling is delegated to fData,
   // which should be set to throw an exception on error
   
+#ifdef LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_MULTITHREADING_ACCESS
+  std::lock_guard lock(*fDataMutex);
+#endif // LARSIM_PHOTONPROPAGATION_VOXELIZEDCHANNELDATA_MULTITHREADING_ACCESS
   // LOCK here
   fData.seekg(getPosition(index));
   fData.read(reinterpret_cast<char*>(buffer), n * sizeof(Data_t));

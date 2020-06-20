@@ -4,7 +4,8 @@
 #
 # ======================================================================
 
-cet_test(isValidLibraryData_test USE_BOOST_UNIT)
-
-add_subdirectory(FileFormats)
+cet_test(BinaryBlockFile_test USE_BOOST_UNIT
+  LIBRARIES
+    larsim_PhotonPropagation_FileFormats
+  )
 

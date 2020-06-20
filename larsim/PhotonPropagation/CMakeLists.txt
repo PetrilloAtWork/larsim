@@ -1,4 +1,5 @@
-art_make(LIB_LIBRARIES larevt_Filters
+art_make(LIB_LIBRARIES larsim_PhotonPropagation_FileFormats
+                       larevt_Filters
                        lardataobj_RawData
                        larcorealg_Geometry
                        larcore_Geometry_Geometry_service
@@ -19,7 +20,8 @@ art_make(LIB_LIBRARIES larevt_Filters
                        ROOT::Tree
                        ROOT::GenVector
                        "stdc++fs"
-          SERVICE_LIBRARIES larsim_PhotonPropagation
+          SERVICE_LIBRARIES larsim_PhotonPropagation_FileFormats
+                       larsim_PhotonPropagation
                        larsim_Simulation
                        nug4_ParticleNavigation
                        lardataobj_Simulation
@@ -63,3 +65,4 @@ install_scripts()
 add_subdirectory(LibraryBuildTools)
 add_subdirectory(LibraryMappingTools)
 add_subdirectory(ScintTimeTools)
+add_subdirectory(FileFormats)
