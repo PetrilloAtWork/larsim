@@ -137,6 +137,9 @@ namespace phot{
     size_t NOpChannels() const;
 
   private:
+    
+    /// Copy of the full FHiCL service configuration.
+    fhicl::ParameterSet fConfiguration;
 
     int    fCurrentVoxel;
     double fCurrentValue;
@@ -160,8 +163,10 @@ namespace phot{
     bool                 fUseNhitsModel;
     bool 		 fApplyVISBorderCorrection;
     std::string          fVISBorderCorrectionType;		
-    std::string          fSaveLookupTableFile;
-    std::string          fLookupTableFile;
+    std::string          fSaveLookupTableFile; ///< Path of file to save ROOT library into
+    std::string          fSaveReflLookupTableFile; ///< Path of file to save reflected ROOT library into
+    std::string          fLookupTableFile; ///< Path to read binary library from
+    std::string          fReflLookupTableFile; ///< Path to read reflected binary library from
 
     bool                 fParPropTime;
     size_t               fParPropTime_npar;
@@ -260,7 +265,10 @@ namespace phot{
     /// @}
     // --- END Implementation functions ----------------------------------------
 
-
+    /// Loads and returns a the binary file library (as configured).
+    IPhotonLibrary* LoadBinaryFileLibraries
+      (unsigned int expectedVoxels, unsigned int expectedChannels) const;
+    
     /// Checks that options specific to `PhotonLibrary` are not specified.
     /// @throw cet::exception (category `"PhotonLibraryService"`)
     void PhotonLibraryOnlyParametersCheck() const;

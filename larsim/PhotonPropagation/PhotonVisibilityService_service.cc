@@ -69,6 +69,7 @@ namespace phot{
   //--------------------------------------------------------------------
   PhotonVisibilityService::PhotonVisibilityService(fhicl::ParameterSet const& pset) :
 
+    fConfiguration(pset),
     fCurrentVoxel(0),
     fCurrentValue(0.),
     fXmin(0.),
@@ -145,7 +146,9 @@ namespace phot{
       );
     fMapping = art::make_tool<phot::IPhotonMappingTransformations>
       (pset.get<fhicl::ParameterSet>("Mapping", mapDefaultSet));
-
+    
+    if (pset.get("PreloadLibrary", false)) LoadLibrary();
+    
   }
 
   //--------------------------------------------------------------------
@@ -156,29 +159,23 @@ namespace phot{
     if (fTheLibrary) return;
 
     if((!fLibraryBuildJob)&&(!fDoNotLoadLibrary)) {
-      std::string LibraryFileWithPath;
       cet::search_path sp("FW_SEARCH_PATH");
-
-      if( !sp.find_file(fLibraryFile, LibraryFileWithPath) )
-        throw cet::exception("PhotonVisibilityService") << "Unable to find photon library in "  << sp.to_string() << "\n";
 
       if(fParameterization) {
         PhotonLibraryOnlyParametersCheck();
       }
       else {
-        art::ServiceHandle<geo::Geometry const> geom;
-
-        mf::LogInfo("PhotonVisibilityService") << "PhotonVisibilityService Loading photon library from file "
-                                                << LibraryFileWithPath
-                                                << " for "
-                                                << GetVoxelDef().GetNVoxels()
-                                                << " voxels and "
-                                                << geom->NOpDets()
-                                                << " optical detectors."
-                                                << std::endl;
+        
 
         if(fHybrid){
+          std::string LibraryFileWithPath;
+          if( !sp.find_file(fLibraryFile, LibraryFileWithPath) )
+            throw cet::exception("PhotonVisibilityService") << "Unable to find photon library in "  << sp.to_string() << "\n";
           PhotonLibraryOnlyParametersCheck();
+
+          mf::LogInfo("PhotonVisibilityService") << "PhotonVisibilityService Loading hybrid photon library from file "
+                                                 << LibraryFileWithPath << std::endl;
+
           fTheLibrary = new PhotonLibraryHybrid(LibraryFileWithPath,
                                                 GetVoxelDef());
         }
@@ -187,33 +184,47 @@ namespace phot{
           std::size_t const NVoxels = GetVoxelDef().GetNVoxels();
           
           if (fLookupTableFile.empty()) {
+            std::string LibraryFileWithPath;
+            if( !sp.find_file(fLibraryFile, LibraryFileWithPath) )
+              throw cet::exception("PhotonVisibilityService") << "Unable to find photon library in "  << sp.to_string() << "\n";
+            
+            art::ServiceHandle<geo::Geometry const> geom;
+
+            mf::LogInfo("PhotonVisibilityService") << "PhotonVisibilityService Loading photon library from file "
+                                                   << LibraryFileWithPath
+                                                   << " for "
+                                                   << NVoxels
+                                                   << " voxels and "
+                                                   << geom->NOpDets()
+                                                   << " optical detectors.";
+
             PhotonLibrary* lib = new PhotonLibrary;
             
             fTheLibrary = lib;
 
             lib->LoadLibraryFromFile(LibraryFileWithPath, NVoxels, fStoreReflected, fStoreReflT0, fParPropTime_npar, fParPropTime_MaxRange);
             
-            if (!fSaveLookupTableFile.empty())
-              lib->StoreLibraryToPlainDataFile(fSaveLookupTableFile);
-          }
+            if (!fSaveLookupTableFile.empty() || !fSaveReflLookupTableFile.empty()) {
+              lib->StoreLibraryToPlainDataFiles(
+                fSaveLookupTableFile, fSaveReflLookupTableFile,
+                fVoxelDef, fConfiguration.to_indented_string()
+                );
+            }
+          } // if no lookup file name 
           else {
-            auto* lib = new phot::BinaryFilePhotonLibrary;
-            fTheLibrary = lib;
-            
-            std::string LookupTableFileWithPath;
-            if (!sp.find_file(fLookupTableFile, LookupTableFileWithPath)) {
-              throw cet::exception("PhotonVisibilityService")
-                << "Unable to find direct photon visibility file '"
-                << fLookupTableFile << "' in " << sp.to_string() << "\n";
+            //
+            // load the visibility libraries from the binary file configuration
+            //
+            if (!fLibraryFile.empty()) {
+              throw art::Exception(art::errors::Configuration)
+                << "PhotonVisibilityService service configuration specifies both"
+                << " a ROOT format library ('" << fLibraryFile << "') and"
+                << " a binary format library ('" << fLookupTableFile << "')\n";
             }
             
-            lib->LoadLibraryFromFile(
-              LibraryFileWithPath,
-              LookupTableFileWithPath,
-              NVoxels, fMapping->libraryMappingSize(geo::origin()), // TODO the library should contain its size
-              fStoreReflected, fStoreReflT0,
-              fParPropTime_npar, fParPropTime_MaxRange
-              );
+            fTheLibrary = LoadBinaryFileLibraries
+              (NVoxels, fMapping->libraryMappingSize(geo::origin()));
+            
           }
           
         }
@@ -235,6 +246,7 @@ namespace phot{
 
   } // PhotonVisibilityService::LoadLibrary()
 
+  
   //--------------------------------------------------------------------
   void PhotonVisibilityService::StoreLibrary()
   {
@@ -275,7 +287,9 @@ namespace phot{
     fApplyVISBorderCorrection = p.get< bool    >("ApplyVISBorderCorrection", false);
     fVISBorderCorrectionType = p.get< std::string >("VIS_BORDER_correction_type","");
     fSaveLookupTableFile  = p.get< std::string >("SaveVisibilityAsBinaryFile", "");
+    fSaveReflLookupTableFile = p.get< std::string >("SaveReflVisibilityAsBinaryFile", "");
     fLookupTableFile      = p.get< std::string >("VisibilityBinaryFilePath", "");
+    fReflLookupTableFile  = p.get< std::string >("ReflVisibilityBinaryFilePath", "");
     
     // Voxel parameters
     fUseCryoBoundary      = p.get< bool        >("UseCryoBoundary", false);
@@ -390,6 +404,48 @@ namespace phot{
 
 
   //------------------------------------------------------
+  IPhotonLibrary* PhotonVisibilityService::LoadBinaryFileLibraries
+    (unsigned int expectedVoxels, unsigned int expectedChannels) const
+  {
+    
+    cet::search_path const sp("FW_SEARCH_PATH");
+    std::string LookupTableFileWithPath, ReflLookupTableFileWithPath;
+    if (!sp.find_file(fLookupTableFile, LookupTableFileWithPath)) {
+      throw cet::exception("PhotonVisibilityService")
+        << "Unable to find direct photon visibility file '"
+        << fLookupTableFile << "' in " << sp.to_string() << "\n";
+    }
+    if (!fReflLookupTableFile.empty()) {
+      if (!sp.find_file(fReflLookupTableFile, ReflLookupTableFileWithPath)) {
+        throw cet::exception("PhotonVisibilityService")
+          << "Unable to find reflected photon visibility file '"
+          << fReflLookupTableFile << "' in " << sp.to_string() << "\n";
+      }
+    }
+    
+    auto* lib = new phot::BinaryFilePhotonLibrary
+      (LookupTableFileWithPath, ReflLookupTableFileWithPath);
+    
+    if (static_cast<unsigned int>(lib->NVoxels()) != expectedVoxels) {
+      throw cet::exception("PhotonVisbilityService")
+        << "Library '" << LookupTableFileWithPath << "' includes "
+        << lib->NVoxels()
+        << " voxels while service configuration expects "
+        << expectedVoxels << "\n";
+    }
+    
+    if (static_cast<unsigned int>(lib->NOpChannels()) != expectedChannels) {
+      throw cet::exception("PhotonVisbilityService")
+        << "Library '" << LookupTableFileWithPath << "' includes "
+        << lib->NOpChannels()
+        << " channels while mapping from service configuration expects "
+        << expectedChannels << "\n";
+    }
+    
+    return lib;
+  } // PhotonVisibilityService::LoadBinaryFileLibraries()
+
+  //------------------------------------------------------
   void PhotonVisibilityService::PhotonLibraryOnlyParametersCheck() const {
     
     std::optional<cet::exception> e;
@@ -401,8 +457,20 @@ namespace phot{
         << "' is valid only when *reading* a *standard* photon library"
         << " (e.g. not an hybrid one).";
     }
+    if (!fSaveReflLookupTableFile.empty()) {
+      errMsg() << "Option 'SaveReflVisibilityAsBinaryFile' (set to '"
+        << fSaveLookupTableFile
+        << "' is valid only when *reading* a *standard* photon library"
+        << " (e.g. not an hybrid one).";
+    }
     if (!fLookupTableFile.empty()) {
       errMsg() << "Option 'VisibilityBinaryFilePath' (set to '"
+        << fLookupTableFile
+        << "' is valid only when *reading* a *standard* photon library"
+        << " (e.g. not an hybrid one).";
+    }
+    if (!fReflLookupTableFile.empty()) {
+      errMsg() << "Option 'ReflVisibilityBinaryFilePath' (set to '"
         << fLookupTableFile
         << "' is valid only when *reading* a *standard* photon library"
         << " (e.g. not an hybrid one).";

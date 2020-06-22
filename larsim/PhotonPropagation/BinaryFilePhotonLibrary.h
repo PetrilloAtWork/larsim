@@ -13,155 +13,220 @@
 #ifndef LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H
 #define LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H
 
+// LArSoft libraries
 #include "larsim/PhotonPropagation/IPhotonLibrary.h"
-
-#include "TF1.h"
-
 #include "larsim/PhotonPropagation/VoxelizedChannelData.h"
-#include "lardataobj/Utilities/LazyVector.h"
 
-class TTree;
-
-namespace phot{
-
-  class BinaryFilePhotonLibrary : public IPhotonLibrary
-  {
-  public:
-    BinaryFilePhotonLibrary() = default;
-
-    TTree * ProduceTTree() const;
+// C/C++ standard libraries
+#include <string>
+#include <cstddef> // std::size_t
 
 
-    virtual float GetCount(size_t Voxel, size_t OpChannel) const override;
+// -----------------------------------------------------------------------------
+namespace phot { class BinaryFilePhotonLibrary; }
 
-    float GetTimingPar(size_t Voxel, size_t OpChannel, size_t parnum) const;
-    void SetTimingPar(size_t Voxel, size_t OpChannel, float Count, size_t parnum);
+/**
+ * @brief Simple photon library implementation with binary visibility sources.
+ * 
+ * This is a partial implementation of `phot::IPhotonLibrary` interface, which
+ * supports the following features:
+ * 
+ * * visibility of source scintillation points: two maps are supported,
+ *   that are usually referred to as "reflected" and... the other one
+ * 
+ * The following features are _not_ supported:
+ * 
+ * * reflected light first light timing
+ * * direct light timing parametrization
+ * 
+ * Any attempt to use the interface for these unsupported features will throw
+ * an exception.
+ * 
+ * @note While we refer to two libraries according to the terminology in
+ *       @ref larsim_BinaryFilePhotonLibrary_glossary "the glossary below",
+ *       the general idea is that this object supports multiple libraries
+ *       (so far the interface fix the number to two), all contributing to
+ *       the total visibility. The difference between the libraries is only
+ *       beyond visibility: for example, they might have different arrival time
+ *       distribution, but this does not affect this object: the caller will
+ *       be able to have the visibility from the different components, and
+ *       dealing with them as needed.
+ * 
+ * Note that the timing parametrization is provided in `larg4::LegacyLArG4`
+ * with means different than this library.
+ * 
+ * Also note that this object *does not support building a library*.
+ * In principle this can be changed; note however that there is no interface
+ * to do that, therefore any code attempting to do that will have to either
+ * introduce that interface in `phot::IPhotonLibrary` and
+ * `phot::PhotonVisibilityService`, or to address this object directly.
+ * 
+ * So far, the supported way to build a library is to use `phot::PhotonLibrary`
+ * implementation and then convert the library file.
 
-//    TF1& GetTimingTF1(size_t Voxel, size_t OpChannel) const;
-    void SetTimingTF1(size_t Voxel, size_t OpChannel, TF1 func);
+ * 
+ * 
+ * Glossary
+ * =========
+ * 
+ * @anchor larsim_BinaryFilePhotonLibrary_glossary
+ * 
+ * The following wording is used throughout this documentation:
+ * 
+ * * _direct light_: this is the main visibility map, accessed by a reflected
+ *   light flag to `false`; existing libraries assign this library to describe
+ *   the visibility of the scintillation light reaching the optical detectors
+ *   without changing wave length;
+ * * _reflected light_: this is the secondary visibility map, accessed by a
+ *   reflected light flag to `true`; existing libraries assign this library to
+ *   describe the visibility of the scintillation light reaching the optical
+ *   detectors after a wave length change;
+ * 
+ * 
+ * 
+ * Notes on the implementation of building a library
+ * ==================================================
+ * 
+ * Two ways are suggested for building the library.
+ * Both utilize an interface similar to the one in `PhotonLibrary`.
+ * 
+ * In one case, the library can be allocated on disk fully, and on each voxel
+ * either 0 or a computed value is written at the proper place in the file.
+ * With the hope that the file system is ok with all that seeking.
+ * 
+ * In the other, a special format of file is implemented that holds only part
+ * of the library, and then again on each voxel a computed value is written at
+ * the proper place in the file.
+ * 
+ * In both cases, a post-processing job will have to merge the fragments, in the
+ * first case adding all the data, as in the second case, where some more
+ * optimization may be possible.
+ * 
+ */
+class phot::BinaryFilePhotonLibrary: public phot::IPhotonLibrary {
+    public:
+  
+  /**
+   * @brief Constructor: loads the libraries from files.
+   * @param DirectVisibilityPlainFilePath full path to the direct light library
+   * @param ReflectedVisibilityPlainFilePath full path to the reflected light
+   *        library
+   * 
+   * The libraries must have consistent sizes (number of voxels and of
+   * channels).
+   * 
+   * The reflected light library path may be empty, in which case the library
+   * is set not to support the reflected light visibility.
+   */
+  BinaryFilePhotonLibrary(
+    std::string const& DirectVisibilityPlainFilePath,
+    std::string const& ReflectedVisibilityPlainFilePath
+    );
+
+  // --- BEGIN -- Query interface ----------------------------------------------
+  
+  /// Returns the direct light visibility from `Voxel` to the `OpChannel`.
+  virtual float GetCount(size_t Voxel, size_t OpChannel) const override;
+  
+  /// Returns the reflected light visibility from `Voxel` to the `OpChannel`.
+  virtual float GetReflCount(size_t Voxel, size_t OpChannel) const override;
+
+  /// Returns the direct light visibility from `Voxel` to all channels.
+  virtual Counts_t GetCounts(size_t Voxel) const override;
+  
+  /// Returns the reflected light visibility from `Voxel` to all channels.
+  virtual Counts_t GetReflCounts(size_t Voxel) const override;
+  
+  /// Returns whether the current library deals with reflected light count.
+  virtual bool hasReflected() const override { return fHasReflected; }
+
+  /// Returns whether the current library deals with reflected light timing
+  /// (hint: it does not).
+  virtual bool hasReflectedT0() const override { return false; }
+
+  /// Returns the number of optical channels covered by this library.
+  virtual int NOpChannels() const override { return fNOpChannels; }
+  
+  /// Returns the number of voxels covered by this library.
+  virtual int NVoxels() const override { return fNVoxels; }
+  
+  /// Returns whether the specified `Voxel` is covered by this library.
+  virtual bool isVoxelValid(size_t Voxel) const override
+    { return isVoxelValidImpl(Voxel); }
+  
+  // --- END -- Query interface ------------------------------------------------
 
 
-    virtual float GetReflCount(size_t Voxel, size_t OpChannel) const override;
-    void SetReflCount(size_t Voxel, size_t OpChannel, float Count);
+  // --- BEGIN -- Not implemented query interface ------------------------------
+  /// @name Unsupported queries.
+  /// @{
+  
+  virtual float GetReflT0(size_t, size_t) const override
+    { NotImplemented("GetReflT0"); }
+  
+  virtual T0s_t GetReflT0s(size_t Voxel) const override
+    { NotImplemented("GetReflT0s"); }
+  
+  /// @}
+  // --- END -- Not implemented query interface --------------------------------
+  
+  
+    private:
+  
+  /// Type of resource handler for the direct light visibility table.
+  using LookupTableFile_t = phot::VoxelizedChannelData<float>;
 
-    virtual float GetReflT0(size_t Voxel, size_t OpChannel) const override;
-    void SetReflT0(size_t Voxel, size_t OpChannel, float reflT0);
+  // --- BEGIN -- Data members -------------------------------------------------
+  
+  std::size_t fNVoxels;     ///< Number of covered voxels.
+  std::size_t fNOpChannels; ///< Number of covered channels.
 
-    /// Returns a pointer to NOpChannels() visibility values, one per channel
-    virtual Counts_t GetCounts(size_t Voxel) const override;
-    const std::vector<float>* GetTimingPars(size_t Voxel) const;
-    TF1* GetTimingTF1s(size_t Voxel) const;
+  /// Whether the current library deals with reflected light counts.
+  bool fHasReflected = false;
 
-    virtual Counts_t GetReflCounts(size_t Voxel) const override;
-    virtual T0s_t GetReflT0s(size_t Voxel) const override;
+  /// File-based lookup table for direct light.
+  LookupTableFile_t fLookupTable;
+  
+  /// File-based lookup table for reflected light. Undefined state if
+  /// `hasReflected()` is `false`.
+  LookupTableFile_t fReflLookupTable;
+  
+  // --- END -- Data members ---------------------------------------------------
+  
+  
+  /// Returns whether the specified `Voxel` is covered by this library.
+  bool isVoxelValidImpl(size_t Voxel) const { return Voxel < fNVoxels; }
 
-    ///Returns whether the current library deals with time propagation distributions.
-    bool hasTiming() const { return fHasTiming; }
+  /// Returns a "loaded" library from the specified file.
+  LookupTableFile_t LoadLibraryFromPlainDataFile
+    (std::string const& fileName) const;
+  
+  /// Returns the total number of entries in the direct light lookup table.
+  std::size_t LookupTableSize() const;
+  
+  
+  /// Reads the value at the specified `Voxel` and `OpChannel` from the `table.`
+  float getTableCount
+    (LookupTableFile_t const& table, std::size_t voxel, std::size_t opChannel)
+    const;
 
-    /// Returns whether the current library deals with reflected light count.
-    virtual bool hasReflected() const override { return fHasReflected; }
+  /// Reads the values at specified `Voxel` for all channels from the `table.`
+  Counts_t getTableCounts
+    (LookupTableFile_t const& table, std::size_t voxel) const;
 
-    /// Returns whether the current library deals with reflected light timing.
-    virtual bool hasReflectedT0() const override { return fHasReflectedT0; }
-
-    void LoadLibraryFromFile(
-      std::string const& LibraryFile,
-      std::string const& DirectVisibilityPlainFilePath,
-      unsigned int Voxels, unsigned int nOpChannels,
-      bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0, int maxrange=200);
-
-    virtual int NOpChannels() const override { return fNOpChannels; }
-    virtual int NVoxels() const override { return fNVoxels; }
-
-    virtual bool isVoxelValid(size_t Voxel) const override { return isVoxelValidImpl(Voxel); }
-
-
-  private:
-    
-    /// Type of resource handler for the direct light visibility table.
-    using LookupTableFile_t = phot::VoxelizedChannelData<float> ;
-
-    bool fHasReflected   = false; ///< Whether the current library deals with reflected light counts.
-    bool fHasReflectedT0 = false; ///< Whether the current library deals with reflected light timing.
-
-    size_t fHasTiming = 0; ///< Whether the current library deals with time propagation distribution.
-
-
-    LookupTableFile_t fLookupTableFile;
-    
-    // fXxxLookupTable[unchecked_index(Voxel, OpChannel)] = Count
-    // for each voxel, all NChannels() channels are stored in sequence
-    util::LazyVector<float> fReflLookupTable;
-    util::LazyVector<float> fReflTLookupTable;
-    util::LazyVector<std::vector<float>> fTimingParLookupTable;
-    util::LazyVector<TF1> fTimingParTF1LookupTable;
-    std::string fTimingParFormula;
-    size_t fTimingParNParameters;
-    
-
-    size_t fNOpChannels;
-    size_t fNVoxels;
-
-    bool isVoxelValidImpl(size_t Voxel) const { return Voxel < fNVoxels; }
-
-    /// Returns the index of visibility of specified voxel and cell
-    size_t uncheckedIndex(size_t Voxel, size_t OpChannel) const
-      { return Voxel * fNOpChannels + OpChannel; }
-
-    /// Unchecked access to a reflected visibility datum
-    float uncheckedAccessRefl (size_t Voxel, size_t OpChannel) const
-    { return fReflLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
-
-    /// Unchecked access to a reflected visibility datum
-    float& uncheckedAccessRefl(size_t Voxel, size_t OpChannel)
-    { return fReflLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
-
-    /// Unchecked access to a reflected T0 visibility datum
-    float uncheckedAccessReflT (size_t Voxel, size_t OpChannel) const
-    { return fReflTLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
-
-    /// Unchecked access to a reflected T0 visibility datum
-    float& uncheckedAccessReflT(size_t Voxel, size_t OpChannel)
-    { return fReflTLookupTable[uncheckedIndex(Voxel, OpChannel)]; }
+  
+  /**
+   * @brief Throws an exception with not-implemented message.
+   * @throw cet::exception (category `"BinaryFilePhotonLibrary"`) always thrown
+   */
+  [[noreturn]] static void NotImplemented(std::string const& funcName);
+  
+  
+  
+}; // phot::BinaryFilePhotonLibrary
 
 
-    /// Unchecked access to a parameter the time distribution
-    float uncheckedAccessTimingPar (size_t Voxel, size_t OpChannel, size_t parnum) const
-    { return fTimingParLookupTable[uncheckedIndex(Voxel, OpChannel)][parnum];}
+// -----------------------------------------------------------------------------
 
-    /// Unchecked access to a parameter of the time distribution
-    float& uncheckedAccessTimingPar(size_t Voxel, size_t OpChannel, size_t parnum)
-    { return fTimingParLookupTable[uncheckedIndex(Voxel, OpChannel)][parnum]; }
-
-
-    /// Unchecked access to a parameter of the time distribution
-    TF1& uncheckedAccessTimingTF1(size_t Voxel, size_t OpChannel)
-    { return fTimingParTF1LookupTable[uncheckedIndex(Voxel, OpChannel)]; }
-
-    /// Unchecked access to a parameter of the time distribution
-    const TF1& uncheckedAccessTimingTF1(size_t Voxel, size_t OpChannel) const
-    {
-      // note that this will produce a segmentation fault if the formula is not there
-      return *(fTimingParTF1LookupTable.data_address(uncheckedIndex(Voxel, OpChannel)));
-    }
-    
-    void LoadLibraryFromPlainDataFile
-      (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels);
-    
-    /// Returns the total number of entries in the direct light lookup table.
-    std::size_t LookupTableSize() const;
-
-    /// Name of the optical channel number in the input tree
-    static std::string const OpChannelBranchName;
-
-    /// Returns the number of optical channels in the specified tree
-    static size_t ExtractNOpChannels(TTree* tree);
-
-    /// Converts size_t into integer
-    static int size_t2int(size_t val)
-      { return (val <= std::numeric_limits<int>::max())? (int)((ssize_t)val) : -1; }
-  };
-
-}
 
 #endif // LARSIM_PHOTONPROPAGATION_BINARYFILEPHOTONLIBRARY_H

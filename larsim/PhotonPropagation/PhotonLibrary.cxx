@@ -1,6 +1,7 @@
 #include "art/Framework/Services/Registry/ServiceHandle.h"
 #include "art_root_io/TFileService.h"
 
+#include "larsim/PhotonPropagation/PhotonLibraryBinaryFileFormat.h"
 #include "larsim/PhotonPropagation/PhotonLibrary.h"
 #include "larcorealg/CoreUtils/counter.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
@@ -102,24 +103,35 @@ namespace phot{
 
 
   //------------------------------------------------------------
-  void PhotonLibrary::StoreLibraryToPlainDataFile(std::string const& fileName) const {
+  void PhotonLibrary::StoreLibraryToPlainDataFiles(
+    std::string const& directPath, std::string const& reflectedPath,
+    sim::PhotonVoxelDef const& voxelDefs,
+    std::string configuration /* = "" */
+    ) const
+  {
   
-    // cheater! it's only the VUV visibility!
-    mf::LogInfo("PhotonLibrary")
-      << "Saving the full library information as plain data files.";
-    
-    std::ofstream outFile(fileName, std::ios::binary | std::ios::trunc);
-    outFile.exceptions(std::ofstream::failbit | std::ofstream::badbit);
- 
-    for (auto const iEntry: util::counter(fLookupTable.size())) {
-      float const vis = fLookupTable[iEntry];
-      outFile.write(reinterpret_cast<char const*>(&vis), sizeof(vis));
+    if (!directPath.empty()) {
+      mf::LogVerbatim("PhotonLibrary")
+        << "Saving the direct light visibility library information as '"
+        << directPath << "'.";
+      StoreLibraryToPlainDataFile
+        (directPath, voxelDefs, fLookupTable, configuration);
     }
     
-    mf::LogVerbatim("PhotonLibrary")
-      << "Full VUV library information saved as as '" << fileName << "'.";
+    if (!reflectedPath.empty()) {
+      if (!hasReflected()) {
+        throw cet::exception("PhotonLibrary")
+          << "Requested the serialization into binary file '" << reflectedPath
+          << "' for reflected light, which is not included in the library.\n";
+      }
+      mf::LogVerbatim("PhotonLibrary")
+        << "Saving the reflected light visibility library information as '"
+        << reflectedPath << "'.";
+      StoreLibraryToPlainDataFile
+        (reflectedPath, voxelDefs, fReflLookupTable, configuration);
+    }
     
-  } // PhotonLibrary::StoreLibraryToPlainDataFile()
+  } // PhotonLibrary::StoreLibraryToPlainDataFiles()
   
   
   //------------------------------------------------------------
@@ -280,16 +292,6 @@ namespace phot{
 
   }
 
-  //------------------------------------------------------------
-  void PhotonLibrary::LoadLibraryFromPlainDataFile
-    (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels)
-  {
-    
-    fLookupTableFile.emplace(fileName, nVoxels, nOpChannels);
-    
-  } // PhotonLibrary::LoadLibraryFromPlainDataFile()
-  
-  
   //----------------------------------------------------
 
   float PhotonLibrary::GetCount(size_t Voxel, size_t OpChannel) const
@@ -431,6 +433,60 @@ namespace phot{
     else return fReflTLookupTable.data_address(uncheckedIndex(Voxel, 0));
   }
 
+  //------------------------------------------------------------
+  void PhotonLibrary::StoreLibraryToPlainDataFile(
+    std::string const& outputFilePath,
+    sim::PhotonVoxelDef const& voxelDefs,
+    util::LazyVector<float> const& table,
+    std::string configuration /* = "" */
+  ) const {
+    
+    phot::PhotonLibraryBinaryFileFormat outFile(outputFilePath);
+    
+    auto const nEntries = fNOpChannels * fNVoxels;
+    
+    auto const lowerPoint = voxelDefs.GetRegionLowerCorner();
+    auto const upperPoint = voxelDefs.GetRegionUpperCorner();
+    auto const voxelSizes = voxelDefs.GetVoxelSize();
+    auto const steps = voxelDefs.GetSteps();
+    assert(fNVoxels == voxelDefs.GetNVoxels());
+    
+    phot::PhotonLibraryBinaryFileFormat::HeaderSettings_t header;
+    header.version = phot::PhotonLibraryBinaryFileFormat::LatestFormatVersion;
+    header.configuration = std::move(configuration);
+    header.nEntries = nEntries;
+    header.nChannels = fNOpChannels;
+    header.nVoxels = fNVoxels;
+    header.axes[0] = { steps[0], lowerPoint.X(), upperPoint.X(), voxelSizes.X() };
+    header.axes[1] = { steps[1], lowerPoint.Y(), upperPoint.Y(), voxelSizes.Y() };
+    header.axes[2] = { steps[2], lowerPoint.Z(), upperPoint.Z(), voxelSizes.Z() };
+    outFile.setHeader(std::move(header));
+    std::ostringstream sstr;
+    outFile.dumpInfo(sstr);
+    mf::LogInfo("PhotonLibrary")
+      << "Writing library to '" << outputFilePath << "':\n" << sstr.str();
+    
+    try {
+      //
+      // ideally we could use the data buffer directly; but if it is lazy and
+      // missing data, well, we can't any more; so we borrow a lot of memory...
+      //
+      std::vector<float> visData(nEntries);
+      auto itDest = visData.begin();
+      for (auto i: util::counter<std::size_t>(nEntries)) *itDest++ = table[i];
+      assert(itDest == visData.end());
+      outFile.writeFile(visData);
+    }
+    catch (cet::exception const& e) {
+      throw cet::exception("PhotonLibrary", "", e)
+        << "PhotonLibrary::StoreLibraryToPlainDataFile():"
+        " error while writing library into '"
+        << outputFilePath << "'.\n";
+    }
+    
+  } // PhotonLibrary::StoreLibraryToPlainDataFile()
+  
+  
   //----------------------------------------------------
 
   size_t PhotonLibrary::ExtractNOpChannels(TTree* tree) {

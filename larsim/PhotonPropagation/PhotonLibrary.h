@@ -5,6 +5,7 @@
 #define PHOTONLIBRARY_H
 
 #include "larsim/PhotonPropagation/IPhotonLibrary.h"
+#include "larsim/Simulation/PhotonVoxels.h"
 
 #include "TF1.h"
 class TTree;
@@ -57,10 +58,12 @@ namespace phot{
 
 
     void StoreLibraryToFile(std::string LibraryFile, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0) const;
-    void StoreLibraryToPlainDataFile(std::string const& fileName) const;
+    void StoreLibraryToPlainDataFiles(
+      std::string const& directPath, std::string const& reflectedPath,
+      sim::PhotonVoxelDef const& voxelDefs,
+      std::string configuration = ""
+      ) const;
     void LoadLibraryFromFile(std::string LibraryFile, size_t NVoxels, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0, int maxrange=200);
-    void LoadLibraryFromPlainDataFile
-      (std::string const& fileName, unsigned int nVoxels, unsigned int nOpChannels);
     void CreateEmptyLibrary(size_t NVoxels, size_t NChannels, bool storeReflected=false, bool storeReflT0=false, size_t storeTiming=0);
 
 
@@ -88,8 +91,6 @@ namespace phot{
     std::string fTimingParFormula;
     size_t fTimingParNParameters;
     
-    std::optional<phot::VoxelizedChannelData<float>> fLookupTableFile;
-
     size_t fNOpChannels;
     size_t fNVoxels;
 
@@ -144,6 +145,15 @@ namespace phot{
       return *(fTimingParTF1LookupTable.data_address(uncheckedIndex(Voxel, OpChannel)));
     }
 
+    /// Writes the content of one lookup table into a file.
+    void StoreLibraryToPlainDataFile(
+      std::string const& outputFilePath,
+      sim::PhotonVoxelDef const& voxelDefs,
+      util::LazyVector<float> const& table,
+      std::string configuration = ""
+      ) const;
+
+    
     /// Name of the optical channel number in the input tree
     static std::string const OpChannelBranchName;
 
