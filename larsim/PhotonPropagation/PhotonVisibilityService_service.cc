@@ -45,6 +45,13 @@
 #include <optional>
 #include <filesystem>
 
+namespace {
+  
+  /// Looks up for `path` (if absolute and existing, returns `path` itself).
+  std::string findLibraryFile(std::filesystem::path const& path);
+  
+} // local namespace
+
 
 namespace phot{
 
@@ -409,19 +416,12 @@ namespace phot{
   {
     
     cet::search_path const sp("FW_SEARCH_PATH");
-    std::string LookupTableFileWithPath, ReflLookupTableFileWithPath;
-    if (!sp.find_file(fLookupTableFile, LookupTableFileWithPath)) {
-      throw cet::exception("PhotonVisibilityService")
-        << "Unable to find direct photon visibility file '"
-        << fLookupTableFile << "' in " << sp.to_string() << "\n";
-    }
-    if (!fReflLookupTableFile.empty()) {
-      if (!sp.find_file(fReflLookupTableFile, ReflLookupTableFileWithPath)) {
-        throw cet::exception("PhotonVisibilityService")
-          << "Unable to find reflected photon visibility file '"
-          << fReflLookupTableFile << "' in " << sp.to_string() << "\n";
-      }
-    }
+    std::string const LookupTableFileWithPath
+      = findLibraryFile(fLookupTableFile);
+
+    std::string ReflLookupTableFileWithPath;
+    if (!fReflLookupTableFile.empty())
+      ReflLookupTableFileWithPath = findLibraryFile(fReflLookupTableFile);
     
     auto* lib = new phot::BinaryFilePhotonLibrary
       (LookupTableFileWithPath, ReflLookupTableFileWithPath);
@@ -884,6 +884,45 @@ namespace phot{
   }
 
 } // namespace
+
+
+
+//------------------------------------------------------------------------------
+namespace {
+  std::string findLibraryFile(std::filesystem::path const& path) {
+    
+    if (path.is_absolute() && std::filesystem::exists(path))
+      return path.string();
+    
+    cet::search_path const sp("FW_SEARCH_PATH");
+    std::string foundPath;
+    if (sp.find_file(path, foundPath)) return foundPath;
+    
+    if (std::filesystem::exists(path)) {
+      try {
+        return std::filesystem::absolute(path).string();
+      }
+      catch (std::exception const& e) {
+        
+        // last try: even if not absolute, if it exists we are happy with it
+        throw cet::exception("PhotonVisibilityService")
+          << "Unable to extend to absolute photon library path " << path
+          << "\n(STL message: " << e.what() << ")\n";
+        
+      }
+    } // if exists
+    
+    throw cet::exception("PhotonVisibilityService")
+      << "Unable to find photon visibility file "
+      << path << " in " << sp.to_string() << "\n";
+    
+  } // PhotonVisibilityService::findLibraryFile()
+  
+} // local namespace
+
+
+//------------------------------------------------------------------------------
+
 
 namespace phot{
 

@@ -29,7 +29,6 @@
 #include <memory> // std::unique_ptr<>
 
 
-
 ///General LArSoft Utilities
 namespace phot{
 
